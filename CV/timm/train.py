@@ -133,6 +133,8 @@ parser.add_argument('--bias-decay', action='store_true', default=False,
                     help='Perform the weight decay on bias term (default=False)')
 parser.add_argument('--no-prox', action='store_true', default=False,
                     help='Perform the weight decay update like AdamW (default=False)')
+parser.add_argument('--alpha', type=float, default=1.0,
+                    help='Base trajectory coefficient for adan_NC (default: 1.0)')
 
 
 # Learning rate schedule parameters
@@ -285,13 +287,17 @@ parser.add_argument('--eval-metric', default='top1', type=str, metavar='EVAL_MET
                     help='Best metric (default: "top1"')
 parser.add_argument('--tta', type=int, default=0, metavar='N',
                     help='Test/inference time augmentation (oversampling) factor. 0=None (default: 0)')
-parser.add_argument("--local_rank", default=0, type=int)
+parser.add_argument("--local-rank", "--local_rank", default=0, type=int)
 parser.add_argument('--use-multi-epochs-loader', action='store_true', default=False,
                     help='use the multi-epochs-loader to save time at the beginning of every epoch')
 parser.add_argument('--torchscript', dest='torchscript', action='store_true',
                     help='convert model torchscript for inference')
 parser.add_argument('--log-wandb', action='store_true', default=False,
                     help='log training and validation metrics to wandb')
+parser.add_argument('--wandb-project', type=str, default='adan-optimizer-bench',
+                    help='wandb project name (default: adan-optimizer-bench)')
+parser.add_argument('--wandb-entity', type=str, default='',
+                    help='wandb entity/team name (default: none)')
 
 
 def _parse_args():
@@ -317,7 +323,11 @@ def main():
     
     if args.log_wandb:
         if has_wandb:
-            wandb.init(project=args.experiment, config=args)
+            if args.local_rank == 0:
+                wandb_project = getattr(args, 'wandb_project', None) or args.experiment
+                wandb_entity = getattr(args, 'wandb_entity', None) or None
+                wandb.init(project=wandb_project, entity=wandb_entity, config=args,
+                           name=args.experiment)
         else: 
             _logger.warning("You've requested to log metrics to wandb but package not found. "
                             "Metrics not being logged to wandb, try `pip install wandb`")
@@ -419,6 +429,8 @@ def main():
     opt_lower = args.opt.lower()
     if opt_lower == 'adan':
         args.opt_args = {'max_grad_norm': args.max_grad_norm, 'no_prox': args.no_prox}
+    elif opt_lower == 'adannc':
+        args.opt_args = {'max_grad_norm': args.max_grad_norm, 'alpha': args.alpha}
     optimizer = create_optimizer(args, model, filter_bias_and_bn = not args.bias_decay)
     print(optimizer)
 
@@ -634,6 +646,15 @@ def main():
                     model_ema.module, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast, log_suffix=' (EMA)')
                 eval_metrics = ema_eval_metrics
 
+            if args.log_wandb and has_wandb and args.local_rank == 0:
+                wandb.log({
+                    'train/epoch_loss': train_metrics['loss'],
+                    'val/loss': eval_metrics['loss'],
+                    'val/top1': eval_metrics['top1'],
+                    'val/top5': eval_metrics['top5'],
+                    'epoch': epoch,
+                })
+
             if lr_scheduler is not None:
                 # step LR for next epoch
                 lr_scheduler.step(epoch + 1, eval_metrics[eval_metric])
@@ -641,7 +662,7 @@ def main():
             if output_dir is not None:
                 update_summary(
                     epoch, train_metrics, eval_metrics, os.path.join(output_dir, 'summary.csv'),
-                    write_header=best_metric is None, log_wandb=args.log_wandb and has_wandb)
+                    write_header=best_metric is None, log_wandb=False)
 
             if saver is not None:
                 # save proper checkpoint with eval metric
@@ -713,6 +734,16 @@ def train_one_epoch(
         torch.cuda.synchronize()
         num_updates += 1
         batch_time_m.update(time.time() - end)
+
+        if args.log_wandb and has_wandb and args.local_rank == 0:
+            lrl = [param_group['lr'] for param_group in optimizer.param_groups]
+            step_lr = sum(lrl) / len(lrl)
+            wandb.log({
+                'train/step_loss': loss.item(),
+                'train/lr': step_lr,
+                'global_step': num_updates,
+            }, step=num_updates)
+
         if last_batch or batch_idx % args.log_interval == 0:
             lrl = [param_group['lr'] for param_group in optimizer.param_groups]
             lr = sum(lrl) / len(lrl)

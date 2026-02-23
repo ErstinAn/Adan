@@ -1,0 +1,71 @@
+program: train.py
+method: grid
+metric:
+  name: val/loss
+  goal: minimize
+name: adanNC_alpha_sweep
+project: resnet50_epoch150
+entity: PINN_PtB
+parameters:
+  alpha:
+    values: [0.5, 1.0, 1.5, 2.0]
+command:
+  - ${env}
+  - python
+  - -m
+  - torch.distributed.launch
+  - --nproc_per_node=2
+  - ${program}
+  - --model
+  - resnet50
+  - --lr
+  - "1.5e-2"
+  - --weight-decay
+  - "0.02"
+  - --opt-eps
+  - "1e-8"
+  - --max-grad-norm
+  - "5.0"
+  - --warmup-epochs
+  - "60"
+  - --warmup-lr
+  - "1e-9"
+  - --min-lr
+  - "1e-5"
+  - --bias-decay
+  - --crop-pct
+  - "0.95"
+  - --drop-path
+  - "0.05"
+  - --mixup
+  - "0.1"
+  - --cutmix
+  - "1.0"
+  - --bce-loss
+  - --smoothing
+  - "0.0"
+  - --reprob
+  - "0.0"
+  - --aa
+  - rand-m7-mstd0.5-inc1
+  - --amp
+  - --batch-size
+  - "1024"
+  - --opt
+  - adanNC
+  - --opt-betas
+  - "0.9"
+  - "0.999"
+  - "0.9"
+  - --epochs
+  - "150"
+  - --output
+  - /mnt/disks/local/ka56_workspace/adan
+  - --data-dir
+  - /mnt/disks/local/ka56_workspace/data
+  - --log-wandb
+  - --wandb-project
+  - adan-optimizer-bench
+  - --wandb-entity
+  - PINN_PtB
+  - ${args}

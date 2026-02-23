@@ -25,6 +25,7 @@ from timm.optim.radam import RAdam
 from timm.optim.rmsprop_tf import RMSpropTF
 from timm.optim.sgdp import SGDP
 from adan import Adan
+from adan_NC import adan_NC
 from sam import SAM
 
 try:
@@ -254,6 +255,8 @@ def create_optimizer_v2(
         optimizer = SAM(parameters, optim.SGD, momentum=momentum, nesterov=True, **opt_args)
     elif opt_lower == 'adan':
         optimizer = Adan(parameters, **opt_args)
+    elif opt_lower == 'adannc':
+        optimizer = adan_NC(parameters, **opt_args)
     elif opt_lower == 'momentum':
         opt_args.pop('eps', None)
         optimizer = optim.SGD(parameters, momentum=momentum, nesterov=False, **opt_args)

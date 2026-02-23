@@ -22,7 +22,7 @@ setup(
     python_requires='>=3.8',
     version='0.0.2',
     install_requires=['torch'],
-    py_modules=['adan'],
+    py_modules=['adan', 'adan_NC'],
     description=(
         'Adan: Adaptive Nesterov Momentum Algorithm for '
         'Faster Optimizing Deep Models'
